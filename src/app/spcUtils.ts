@@ -154,14 +154,18 @@ export function calculateAnalysisData(
   const stdDev = calculateStdDev(measurements) ?? 0;
   const withinStdDev = avgRange / constants.d2;
 
-  const cp = (usl - lsl) / (6 * withinStdDev);
-  const cpu = (usl - grandMean) / (3 * withinStdDev);
-  const cpl = (grandMean - lsl) / (3 * withinStdDev);
+  // Prevent division by zero for capability indices
+  const safeWithinStdDev = withinStdDev === 0 ? 0.000001 : withinStdDev;
+  const safeStdDev = stdDev === 0 ? 0.000001 : stdDev;
+
+  const cp = (usl - lsl) / (6 * safeWithinStdDev);
+  const cpu = (usl - grandMean) / (3 * safeWithinStdDev);
+  const cpl = (grandMean - lsl) / (3 * safeWithinStdDev);
   const cpk = Math.min(cpu, cpl);
 
-  const pp = (usl - lsl) / (6 * stdDev);
-  const ppu = (usl - grandMean) / (3 * stdDev);
-  const ppl = (grandMean - lsl) / (3 * stdDev);
+  const pp = (usl - lsl) / (6 * safeStdDev);
+  const ppu = (usl - grandMean) / (3 * safeStdDev);
+  const ppl = (grandMean - lsl) / (3 * safeStdDev);
   const ppk = Math.min(ppu, ppl);
 
   // Analyze for special causes
@@ -220,14 +224,14 @@ export function calculateAnalysisData(
       stdDevOverall: Number(stdDev.toFixed(4)),
       stdDevWithin: Number(withinStdDev.toFixed(4)),
       avgRange: Number(avgRange.toFixed(4)),
-      cp: Number(cp.toFixed(2)),
-      cpu: Number(cpu.toFixed(2)),
-      cpl: Number(cpl.toFixed(2)),
-      cpk: Number(cpk.toFixed(2)),
-      pp: Number(pp.toFixed(2)),
-      ppu: Number(ppu.toFixed(2)),
-      ppl: Number(ppl.toFixed(2)),
-      ppk: Number(ppk.toFixed(2)),
+      cp: Number(isFinite(cp) ? cp.toFixed(2) : "0.00"),
+      cpu: Number(isFinite(cpu) ? cpu.toFixed(2) : "0.00"),
+      cpl: Number(isFinite(cpl) ? cpl.toFixed(2) : "0.00"),
+      cpk: Number(isFinite(cpk) ? cpk.toFixed(2) : "0.00"),
+      pp: Number(isFinite(pp) ? pp.toFixed(2) : "0.00"),
+      ppu: Number(isFinite(ppu) ? ppu.toFixed(2) : "0.00"),
+      ppl: Number(isFinite(ppl) ? ppl.toFixed(2) : "0.00"),
+      ppk: Number(isFinite(ppk) ? ppk.toFixed(2) : "0.00"),
       lsl: Number(lsl.toFixed(3)),
       usl: Number(usl.toFixed(3)),
       target: Number(((usl + lsl) / 2).toFixed(3)),
