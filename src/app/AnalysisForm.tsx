@@ -1,289 +1,532 @@
-import { InspectionData, AnalysisData } from "@/types";
+"use client";
 
-// Control chart constants for sample sizes 1 to 5 as provided
-const controlChartConstants: {
-  [key: string]: { A2: number; D3: number; D4: number; d2: number };
-} = {
-  "1": { A2: 2.66, D3: 0, D4: 3.267, d2: 1.128 },
-  "2": { A2: 1.88, D3: 0, D4: 3.267, d2: 1.128 },
-  "3": { A2: 1.772, D3: 0, D4: 2.574, d2: 1.693 },
-  "4": { A2: 0.796, D3: 0, D4: 2.282, d2: 2.059 },
-  "5": { A2: 0.691, D3: 0, D4: 2.114, d2: 2.326 },
-};
+import { useState, useEffect } from "react";
+import { format } from "date-fns";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Search, Filter, Loader2 } from "lucide-react";
+import { FormState, Shift, Material, Operation, Gauge, InspectionData } from "@/types";
 
-function calculateSubgroupXBar(measurements: number[], sampleSize: number): number[] {
-  const xBarValues: number[] = [];
-  
-  if (sampleSize === 1) {
-    // For individual values, each point is its own subgroup
-    return measurements;
-  }
+// Sample sizes with corresponding control chart constants
+const sampleSizes = [
+  { value: "1", label: "1", A2: 2.66, D3: 0, D4: 3.267 },
+  { value: "2", label: "2", A2: 1.88, D3: 0, D4: 3.267 },
+  { value: "3", label: "3", A2: 1.772, D3: 0, D4: 2.574 },
+  { value: "4", label: "4", A2: 0.796, D3: 0, D4: 2.282 },
+  { value: "5", label: "5", A2: 0.691, D3: 0, D4: 2.114 },
+];
 
-  // For sample sizes 2-5, group measurements and calculate averages
-  for (let i = 0; i < measurements.length; i += sampleSize) {
-    const subgroup = measurements.slice(i, Math.min(i + sampleSize, measurements.length));
-    if (subgroup.length > 0) {
-      // Calculate average based on actual number of points in subgroup
-      const subgroupAvg = subgroup.reduce((sum, val) => sum + val, 0) / subgroup.length;
-      xBarValues.push(subgroupAvg);
-    }
-  }
-
-  return xBarValues;
+interface AnalysisFormProps {
+  formState: FormState;
+  setFormState: React.Dispatch<React.SetStateAction<FormState>>;
+  onAnalyze: (formData: FormState) => void;
+  loading: boolean;
+  error: string | null;
 }
 
-function calculateSubgroupRanges(measurements: number[], sampleSize: number): number[] {
-  const ranges: number[] = [];
+export default function AnalysisForm({
+  formState,
+  setFormState,
+  onAnalyze,
+  loading,
+  error,
+}: AnalysisFormProps) {
+  // Local state for data and loading states
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [operations, setOperations] = useState<Operation[]>([]);
+  const [gauges, setGauges] = useState<Gauge[]>([]);
+  const [inspectionData, setInspectionData] = useState<InspectionData[]>([]);
+  const [isLoadingShifts, setIsLoadingShifts] = useState(false);
+  const [isLoadingMaterials, setIsLoadingMaterials] = useState(false);
+  const [isLoadingOperations, setIsLoadingOperations] = useState(false);
+  const [isLoadingGauges, setIsLoadingGauges] = useState(false);
+  const [isLoadingInspectionData, setIsLoadingInspectionData] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  if (sampleSize === 1) {
-    // For individual values, calculate moving ranges
-    for (let i = 0; i < measurements.length - 1; i++) {
-      ranges.push(Math.abs(measurements[i + 1] - measurements[i]));
-    }
-    return ranges;
-  }
+   const BASE_URL = ""
+  //const BASE_URL = "http://10.10.1.7:8304";
+  // const BASE_URL = "https://humpback-apparent-conversely.ngrok-free.app";
 
-  // For sample sizes 2-5, calculate range within each subgroup
-  for (let i = 0; i < measurements.length; i += sampleSize) {
-    const subgroup = measurements.slice(i, Math.min(i + sampleSize, measurements.length));
-    if (subgroup.length > 1) { // Ensure at least 2 points for range calculation
-      const range = Math.max(...subgroup) - Math.min(...subgroup);
-      ranges.push(range);
-    }
-  }
-
-  return ranges;
-}
-
-function calculateMean(data: number[]): number | null {
-  if (data.length === 0) return null;
-  return data.reduce((sum, value) => sum + value, 0) / data.length;
-}
-
-function calculateStdDev(data: number[], mean: number | null = null): number | null {
-  if (data.length === 0) return null;
-  const dataMean = mean ?? calculateMean(data);
-  if (dataMean === null) return null;
-  const squaredDiffs = data.map((value) => Math.pow(value - dataMean, 2));
-  const variance = calculateMean(squaredDiffs);
-  return variance !== null ? Math.sqrt(variance) : null;
-}
-
-function calculateDistributionData(data: number[], lsl: number, usl: number): AnalysisData["distribution"] | null {
-  if (data.length === 0) return null;
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min;
-
-  const binCount = Math.ceil(Math.sqrt(data.length));
-  const binWidth = range / binCount;
-  const binStart = Math.min(min, lsl);
-
-  const bins = Array(binCount).fill(0);
-  const binEdges = Array(binCount + 1).fill(0).map((_, i) => binStart + i * binWidth);
-
-  data.forEach((value) => {
-    if (value === max) {
-      bins[binCount - 1]++;
-      return;
-    }
-    const binIndex = Math.floor((value - binStart) / binWidth);
-    if (binIndex >= 0 && binIndex < binCount) bins[binIndex]++;
-  });
-
-  const histData = bins.map((count, i) => ({
-    x: Number((binEdges[i] + binWidth / 2).toFixed(4)),
-    y: count,
-  }));
-
-  return {
-    data: histData,
-    stats: {
-      mean: calculateMean(data) ?? 0,
-      target: (usl + lsl) / 2,
-      binEdges,
-      min: min,
-      max: max,
-    },
-  };
-}
-
-export function calculateAnalysisData(
-  inspectionData: InspectionData[],
-  sampleSize: number = 5
-): AnalysisData {
-  const sampleSizeStr = sampleSize.toString();
-  if (!controlChartConstants[sampleSizeStr]) {
-    throw new Error("Sample size must be between 1 and 5");
-  }
-
-  // Extract and validate measurements
-  const measurements = inspectionData
-    .map(d => parseFloat(d.ActualSpecification))
-    .filter(m => !isNaN(m));
-
-  if (measurements.length < sampleSize) {
-    throw new Error("Insufficient valid data for analysis");
-  }
-
-  // Get specification limits
-  const lsl = parseFloat(inspectionData[0].FromSpecification);
-  const usl = parseFloat(inspectionData[0].ToSpecification);
-  const constants = controlChartConstants[sampleSizeStr];
-
-  // Calculate subgroup statistics with proper handling of incomplete subgroups
-  const xBarValues = calculateSubgroupXBar(measurements, sampleSize);
-  const rangeValues = calculateSubgroupRanges(measurements, sampleSize);
-
-  // Calculate overall statistics
-  const grandMean = calculateMean(xBarValues) ?? 0;
-  const avgRange = calculateMean(rangeValues) ?? 0;
-
-  // Calculate control limits
-  const xBarUcl = grandMean + constants.A2 * avgRange;
-  const xBarLcl = grandMean - constants.A2 * avgRange;
-  const rangeUcl = constants.D4 * avgRange;
-  const rangeLcl = constants.D3 * avgRange;
-
-  // Prepare chart data
-  const xBarData = xBarValues.map((mean, i) => ({ x: i + 1, y: mean }));
-  const rangeData = rangeValues.map((range, i) => ({ x: i + 1, y: range }));
-
-  // Calculate process capability indices
-  const stdDev = calculateStdDev(measurements) ?? 0;
-  const withinStdDev = avgRange / constants.d2;
-
-  // Prevent division by zero for capability indices
-  const safeWithinStdDev = withinStdDev === 0 ? 0.000001 : withinStdDev;
-  const safeStdDev = stdDev === 0 ? 0.000001 : stdDev;
-
-  const cp = (usl - lsl) / (6 * safeWithinStdDev);
-  const cpu = (usl - grandMean) / (3 * safeWithinStdDev);
-  const cpl = (grandMean - lsl) / (3 * safeWithinStdDev);
-  const cpk = Math.min(cpu, cpl);
-
-  const pp = (usl - lsl) / (6 * safeStdDev);
-  const ppu = (usl - grandMean) / (3 * safeStdDev);
-  const ppl = (grandMean - lsl) / (3 * safeStdDev);
-  const ppk = Math.min(ppu, ppl);
-
-  // Analyze for special causes
-  const pointsOutsideXBarLimits = xBarData.filter(
-    point => point.y > xBarUcl || point.y < xBarLcl
-  ).length;
-
-  const pointsOutsideRangeLimits = rangeData.filter(
-    point => point.y > rangeUcl || point.y < rangeLcl
-  ).length;
-
-  // Check for runs and trends
-  let consecutiveAboveMean = 0;
-  let consecutiveBelowMean = 0;
-  let maxConsecutiveAbove = 0;
-  let maxConsecutiveBelow = 0;
-  let consecutiveIncreasing = 0;
-  let consecutiveDecreasing = 0;
-
-  for (let i = 0; i < xBarData.length; i++) {
-    // Check for runs above/below mean
-    if (xBarData[i].y > grandMean) {
-      consecutiveAboveMean++;
-      consecutiveBelowMean = 0;
-      maxConsecutiveAbove = Math.max(maxConsecutiveAbove, consecutiveAboveMean);
-    } else if (xBarData[i].y < grandMean) {
-      consecutiveBelowMean++;
-      consecutiveAboveMean = 0;
-      maxConsecutiveBelow = Math.max(maxConsecutiveBelow, consecutiveBelowMean);
-    } else {
-      consecutiveAboveMean = 0;
-      consecutiveBelowMean = 0;
-    }
-
-    // Check for trends
-    if (i > 0) {
-      if (xBarData[i].y > xBarData[i-1].y) {
-        consecutiveIncreasing++;
-        consecutiveDecreasing = 0;
-      } else if (xBarData[i].y < xBarData[i-1].y) {
-        consecutiveDecreasing++;
-        consecutiveIncreasing = 0;
-      } else {
-        consecutiveIncreasing = 0;
-        consecutiveDecreasing = 0;
+  // Fetch data from APIs
+  useEffect(() => {
+    // Fetch shifts
+    const fetchShifts = async () => {
+      setIsLoadingShifts(true);
+      try {
+        const response = await fetch(${BASE_URL}/api/commonappservices/getshiftdatalist);
+        if (!response.ok) throw new Error("Failed to fetch shifts");
+        const data: { success: boolean; data: Shift[]; message?: string } = await response.json();
+        if (data.success) {
+          setShifts(data.data);
+        } else {
+          throw new Error(data.message || "Failed to fetch shifts");
+        }
+      } catch (err) {
+        setFetchError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setIsLoadingShifts(false);
       }
-    }
-  }
+    };
 
-  const hasEightConsecutive = maxConsecutiveAbove >= 8 || maxConsecutiveBelow >= 8;
-  const hasSixConsecutiveTrend = consecutiveIncreasing >= 6 || consecutiveDecreasing >= 6;
+    // Fetch materials
+    const fetchMaterials = async () => {
+      if (!formState.startDate || !formState.endDate || !formState.selectedShifts.length) {
+        setMaterials([]);
+        return;
+      }
 
-  return {
-    metrics: {
-      xBar: Number(grandMean.toFixed(4)),
-      stdDevOverall: Number(stdDev.toFixed(4)),
-      stdDevWithin: Number(withinStdDev.toFixed(4)),
-      avgRange: Number(avgRange.toFixed(4)),
-      cp: Number(isFinite(cp) ? cp.toFixed(2) : "0.00"),
-      cpu: Number(isFinite(cpu) ? cpu.toFixed(2) : "0.00"),
-      cpl: Number(isFinite(cpl) ? cpl.toFixed(2) : "0.00"),
-      cpk: Number(isFinite(cpk) ? cpk.toFixed(2) : "0.00"),
-      pp: Number(isFinite(pp) ? pp.toFixed(2) : "0.00"),
-      ppu: Number(isFinite(ppu) ? ppu.toFixed(2) : "0.00"),
-      ppl: Number(isFinite(ppl) ? ppl.toFixed(2) : "0.00"),
-      ppk: Number(isFinite(ppk) ? ppk.toFixed(2) : "0.00"),
-      lsl: Number(lsl.toFixed(3)),
-      usl: Number(usl.toFixed(3)),
-      target: Number(((usl + lsl) / 2).toFixed(3)),
-    },
-    controlCharts: {
-      xBarData,
-      rangeData,
-      limits: {
-        xBarUcl: Number(xBarUcl.toFixed(4)),
-        xBarMean: Number(grandMean.toFixed(4)),
-        xBarLcl: Number(xBarLcl.toFixed(4)),
-        rangeUcl: Number(rangeUcl.toFixed(4)),
-        rangeMean: Number(avgRange.toFixed(4)),
-        rangeLcl: Number(rangeLcl.toFixed(4)),
-        Agostinho: Number(
-          (Math.abs(grandMean - calculateMean(measurements)!) / stdDev).toFixed(4)
-        ),
-      },
-    },
-    distribution: calculateDistributionData(measurements, lsl, usl) ?? {
-      data: [],
-      stats: { 
-        mean: 0, 
-        target: (usl + lsl) / 2, 
-        binEdges: [],
-        min: 0,
-        max: 0 
-      },
-    },
-    ssAnalysis: {
-      processShift: cpk < 0.75 * cp ? "Yes" : "No",
-      processSpread: cp < 1 ? "Yes" : "No",
-      specialCausePresent: pp >= cp ? "Special Cause Detection impossible" : pp < 0.75 * cp ? "Yes" : "No",
-      pointsOutsideLimits: pointsOutsideXBarLimits > 0 ? 
-        `${pointsOutsideXBarLimits} Points Detected` : 
-        "None",
-      rangePointsOutsideLimits: pointsOutsideRangeLimits > 0 ? 
-        `${pointsOutsideRangeLimits} Points Detected` : 
-        "None",
-      eightConsecutivePoints: hasEightConsecutive ? "Yes" : "No",
-      sixConsecutiveTrend: hasSixConsecutiveTrend ? "Yes" : "No",
-    },
-    processInterpretation: {
-      decisionRemark: cpk >= 1.67 ? "Process Excellent" :
-                      cpk >= 1.45 ? "Process is more capable, Scope for Further Improvement" :
-                      cpk >= 1.33 ? "Process is capable, Scope for Further Improvement" :
-                      cpk >= 1.0 ? "Process is slightly capable, need 100% inspection" :
-                      "Stop Process change, process design",
-      processPotential: cp >= 1.33 ? "Excellent" : cp >= 1.0 ? "Good" : "Poor",
-      processPerformance: cpk >= 1.33 ? "Excellent" : cpk >= 1.0 ? "Good" : "Poor",
-      processStability: pointsOutsideXBarLimits === 0 && !hasEightConsecutive ? "Stable" : "Unstable",
-      processShift: hasEightConsecutive ? "Present" : "Not Detected",
-    },
+      setIsLoadingMaterials(true);
+      try {
+        const params = new URLSearchParams({
+          FromDate: format(formState.startDate, "dd/MM/yyyy"),
+          ToDate: format(formState.endDate, "dd/MM/yyyy"),
+          ShiftId: formState.selectedShifts.join(","), // 👈 comma-separated
+        });
+
+        const response = await fetch(
+          ${BASE_URL}/api/productionappservices/getspcmateriallist?${params},
+          {
+            method: "GET",
+            // headers: { "Content-Type": "application/json" },   
+          }
+        );
+
+        if (!response.ok) throw new Error("Failed to fetch materials");
+        const data: Material[] = await response.json();
+        setMaterials(data);
+      } catch (err) {
+        setFetchError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setIsLoadingMaterials(false);
+      }
+    };
+
+
+    // Fetch operations
+    const fetchOperations = async () => {
+      if (!formState.material || !formState.startDate || !formState.endDate || !formState.selectedShifts.length) {
+        setOperations([]);
+        return;
+      }
+      setIsLoadingOperations(true);
+      try {
+        const params = new URLSearchParams({
+          FromDate: format(formState.startDate, "dd/MM/yyyy"),
+          ToDate: format(formState.endDate, "dd/MM/yyyy"),
+          MaterialCode: formState.material,
+          ShiftId: formState.selectedShifts.join(","), // 👈 comma-separated
+        });
+        const response = await fetch(
+          ${BASE_URL}/api/productionappservices/getspcoperationlist?${params},
+          {
+            method: "GET",
+            // headers: { "Content-Type": "application/json" },
+            // body: JSON.stringify(formState.selectedShifts),
+          }
+        );
+        if (!response.ok) throw new Error("Failed to fetch operations");
+        const data: Operation[] = await response.json();
+        setOperations(data);
+      } catch (err) {
+        setFetchError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setIsLoadingOperations(false);
+      }
+    };
+
+    // Fetch gauges
+    const fetchGauges = async () => {
+      if (!formState.material || !formState.operation || !formState.startDate || !formState.endDate || !formState.selectedShifts.length) {
+        setGauges([]);
+        return;
+      }
+      setIsLoadingGauges(true);
+      try {
+        const params = new URLSearchParams({
+          FromDate: format(formState.startDate, "dd/MM/yyyy"),
+          ToDate: format(formState.endDate, "dd/MM/yyyy"),
+          MaterialCode: formState.material,
+          OperationCode: formState.operation,
+          ShiftId: formState.selectedShifts.join(","), // 👈 comma-separated
+        });
+        const response = await fetch(
+          ${BASE_URL}/api/productionappservices/getspcguagelist?${params},
+          {
+            method: "GET",
+            // headers: { "Content-Type": "application/json" },
+            // body: JSON.stringify(formState.selectedShifts),
+          }
+        );
+        if (!response.ok) throw new Error("Failed to fetch gauges");
+        const data: Gauge[] = await response.json();
+        setGauges(data);
+      } catch (err) {
+        setFetchError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setIsLoadingGauges(false);
+      }
+    };
+
+    // Fetch inspection data
+    const fetchInspectionData = async () => {
+      if (
+        !formState.selectedShifts.length ||
+        !formState.material ||
+        !formState.operation ||
+        !formState.gauge ||
+        !formState.startDate ||
+        !formState.endDate
+      ) {
+        setInspectionData([]);
+        return;
+      }
+      setIsLoadingInspectionData(true);
+      try {
+        const params = new URLSearchParams({
+          FromDate: format(formState.startDate, "dd/MM/yyyy"),
+          ToDate: format(formState.endDate, "dd/MM/yyyy"),
+          MaterialCode: formState.material,
+          OperationCode: formState.operation,
+          GuageCode: formState.gauge,
+          ShiftId: formState.selectedShifts.join(","), // 👈 comma-separated
+        });
+        const response = await fetch(
+          ${BASE_URL}/api/productionappservices/getspcpirinspectiondatalist?${params},
+          {
+            method: "GET",
+            // headers: { "Content-Type": "application/json" },
+            // body: JSON.stringify(formState.selectedShifts),
+          }
+        );
+        if (!response.ok) throw new Error("Failed to fetch inspection data");
+        const data: InspectionData[] = await response.json();
+        setInspectionData(data);
+      } catch (err) {
+        setFetchError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setIsLoadingInspectionData(false);
+      }
+    };
+
+    fetchShifts();
+    fetchMaterials();
+    fetchOperations();
+    fetchGauges();
+    fetchInspectionData();
+  }, [
+    formState.selectedShifts,
+    formState.material,
+    formState.operation,
+    formState.gauge,
+    formState.startDate,
+    formState.endDate,
+  ]);
+
+  // Event handlers
+  const handleShiftToggle = (shiftId: string) => {
+    const updatedShifts = formState.selectedShifts.includes(shiftId)
+      ? formState.selectedShifts.filter((id) => id !== shiftId)
+      : [...formState.selectedShifts, shiftId];
+
+    setFormState({
+      ...formState,
+      selectedShifts: updatedShifts,
+    });
   };
+
+  const handleDateChange = (field: "startDate" | "endDate", date: Date) => {
+    setFormState({
+      ...formState,
+      [field]: date,
+    });
+  };
+
+  const handleFieldChange = (
+    field: "material" | "operation" | "gauge" | "sampleSize",
+    value: string
+  ) => {
+    setFormState({
+      ...formState,
+      [field]: value,
+    });
+  };
+
+  const handleSubmit = () => {
+    try {
+      // Trigger analysis with current form state
+      onAnalyze(formState);
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "Unknown error");
+    }
+  };
+
+  const renderDatePicker = (label: string, field: "startDate" | "endDate", selected: Date) => (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}</Label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            className="w-full justify-start text-left font-normal text-sm h-9"
+            size="sm"
+          >
+            {format(selected, "PPP")}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0">
+          <Calendar
+            mode="single"
+            selected={selected}
+            onSelect={(date) => date && handleDateChange(field, date)}
+            initialFocus
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+
+  const formIsValid =
+    formState.selectedShifts.length > 0 &&
+    formState.material &&
+    formState.operation &&
+    formState.gauge &&
+    formState.sampleSize &&
+    inspectionData.length >= parseInt(formState.sampleSize) &&
+    !isLoadingInspectionData;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+    >
+      <Card className="shadow-md">
+        <CardHeader className="pb-2">
+          <div className="flex items-center">
+            <Filter className="h-4 w-4 mr-2" />
+            <div>
+              <CardTitle>Analysis Parameters</CardTitle>
+              <CardDescription>Select process data to analyze</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <AnimatePresence>
+            {(error || fetchError) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="bg-red-50 text-red-700 p-3 rounded-md mb-4 text-sm"
+              >
+                {error || fetchError}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="space-y-4">
+            {/* Date range */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {renderDatePicker("Start Date", "startDate", formState.startDate)}
+              {renderDatePicker("End Date", "endDate", formState.endDate)}
+            </div>
+
+            {/* Shifts */}
+            <div className="space-y-1">
+              <Label className="text-xs">Shifts</Label>
+              {isLoadingShifts ? (
+                <div className="text-sm text-gray-500">Loading shifts...</div>
+              ) : (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {shifts.map((shift) => (
+                    <div
+                      key={shift.ShiftId}
+                      className="flex items-center space-x-1"
+                    >
+                      <Checkbox
+                        id={shift-${shift.ShiftId}}
+                        checked={formState.selectedShifts.includes(shift.ShiftId)}
+                        onCheckedChange={() => handleShiftToggle(shift.ShiftId)}
+                        className="h-3 w-3"
+                      />
+                      <Label
+                        htmlFor={shift-${shift.ShiftId}}
+                        className="text-xs"
+                      >
+                        {shift.ShiftName}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Dropdowns */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Material */}
+              <div className="space-y-1">
+                <Label className="text-xs">Material</Label>
+                <Select
+                  disabled={isLoadingMaterials || materials.length === 0}
+                  value={formState.material}
+                  onValueChange={(value) => handleFieldChange("material", value)}
+                >
+                  <SelectTrigger className="w-full h-9 text-sm">
+                    <SelectValue placeholder="Select Material" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {isLoadingMaterials ? (
+                      <div className="text-sm text-gray-500 p-2">
+                        Loading materials...
+                      </div>
+                    ) : (
+                      materials.map((m) => (
+                        <SelectItem
+                          key={m.MaterialCode}
+                          value={m.MaterialCode.toString()}
+                          className="text-sm"
+                        >
+                          {m.MaterialName}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Operation */}
+              <div className="space-y-1">
+                <Label className="text-xs">Operation</Label>
+                <Select
+                  disabled={isLoadingOperations || operations.length === 0}
+                  value={formState.operation}
+                  onValueChange={(value) => handleFieldChange("operation", value)}
+                >
+                  <SelectTrigger className="w-full h-9 text-sm">
+                    <SelectValue placeholder="Select Operation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {isLoadingOperations ? (
+                      <div className="text-sm text-gray-500 p-2">
+                        Loading operations...
+                      </div>
+                    ) : (
+                      operations.map((o) => (
+                        <SelectItem
+                          key={o.OperationCode}
+                          value={o.OperationCode.toString()}
+                          className="text-sm"
+                        >
+                          {o.OperationName}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Gauge */}
+              <div className="space-y-1">
+                <Label className="text-xs">Gauge</Label>
+                <Select
+                  disabled={isLoadingGauges || gauges.length === 0}
+                  value={formState.gauge}
+                  onValueChange={(value) => handleFieldChange("gauge", value)}
+                >
+                  <SelectTrigger className="w-full h-9 text-sm">
+                    <SelectValue placeholder="Select Gauge" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {isLoadingGauges ? (
+                      <div className="text-sm text-gray-500 p-2">
+                        Loading gauges...
+                      </div>
+                    ) : (
+                      gauges.map((g) => (
+                        <SelectItem
+                          key={g.GuageCode}
+                          value={g.GuageCode.toString()}
+                          className="text-sm"
+                        >
+                          {g.GuageName}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Sample Size */}
+              <div className="space-y-1">
+                <Label className="text-xs">Sample Size</Label>
+                <Select
+                  value={formState.sampleSize}
+                  onValueChange={(value) => handleFieldChange("sampleSize", value)}
+                >
+                  <SelectTrigger className="w-full h-9 text-sm">
+                    <SelectValue placeholder="Sample Size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sampleSizes.map((size) => (
+                      <SelectItem
+                        key={size.value}
+                        value={size.value}
+                        className="text-sm"
+                      >
+                        {size.label} (A2: {size.A2}, D3: {size.D3}, D4: {size.D4})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Action button */}
+            <div className="pt-2">
+              <Button
+                className="w-full sm:w-auto h-9"
+                onClick={handleSubmit}
+                disabled={loading || !formIsValid}
+              >
+                {loading || isLoadingInspectionData ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Search className="mr-2 h-4 w-4" />
+                    Analyze Data
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
 }
