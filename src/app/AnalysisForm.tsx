@@ -66,8 +66,8 @@ export default function AnalysisForm({
   const [isLoadingInspectionData, setIsLoadingInspectionData] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-   //const BASE_URL = ""
-   const BASE_URL = "http://10.10.1.7:8304";
+   const BASE_URL = ""
+   //const BASE_URL = "http://10.10.1.7:8304";
   // const BASE_URL = "https://humpback-apparent-conversely.ngrok-free.app";
 
   // Fetch data from APIs
