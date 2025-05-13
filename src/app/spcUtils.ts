@@ -36,17 +36,17 @@ function calculateSubgroupRanges(measurements: number[], sampleSize: number): nu
   const ranges: number[] = [];
 
   if (sampleSize === 1) {
-    // For individual values, calculate moving ranges
-    for (let i = 0; i < measurements.length - 1; i++) {
-      ranges.push(Math.abs(measurements[i + 1] - measurements[i]));
+    // For individual values, calculate moving ranges between consecutive points
+    for (let i = 1; i < measurements.length; i++) {
+      ranges.push(Math.abs(measurements[i] - measurements[i - 1]));
     }
     return ranges;
   }
 
-  // For sample sizes 2-5, calculate range within each subgroup
+  // For sample sizes 2-5, calculate range within each complete subgroup
   for (let i = 0; i < measurements.length; i += sampleSize) {
     const subgroup = measurements.slice(i, Math.min(i + sampleSize, measurements.length));
-    if (subgroup.length > 1) { // Ensure at least 2 points for range calculation
+    if (subgroup.length > 1) { // At least 2 points needed for range
       const range = Math.max(...subgroup) - Math.min(...subgroup);
       ranges.push(range);
     }
@@ -287,3 +287,5 @@ export function calculateAnalysisData(
     },
   };
 }
+
+export { calculateAnalysisData }
