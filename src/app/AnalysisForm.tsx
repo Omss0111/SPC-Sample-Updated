@@ -67,7 +67,7 @@ export default function AnalysisForm({
   const [fetchError, setFetchError] = useState<string | null>(null);
 
    const BASE_URL = ""
-  //const BASE_URL = "http://10.10.1.7:8304";
+   //const BASE_URL = "http://10.10.1.7:8304";
   // const BASE_URL = "https://humpback-apparent-conversely.ngrok-free.app";
 
   // Fetch data from APIs
@@ -76,7 +76,7 @@ export default function AnalysisForm({
     const fetchShifts = async () => {
       setIsLoadingShifts(true);
       try {
-        const response = await fetch(${BASE_URL}/api/commonappservices/getshiftdatalist);
+        const response = await fetch(`${BASE_URL}/api/commonappservices/getshiftdatalist`);
         if (!response.ok) throw new Error("Failed to fetch shifts");
         const data: { success: boolean; data: Shift[]; message?: string } = await response.json();
         if (data.success) {
@@ -107,7 +107,7 @@ export default function AnalysisForm({
         });
 
         const response = await fetch(
-          ${BASE_URL}/api/productionappservices/getspcmateriallist?${params},
+          `${BASE_URL}/api/productionappservices/getspcmateriallist?${params}`,
           {
             method: "GET",
             // headers: { "Content-Type": "application/json" },   
@@ -140,7 +140,7 @@ export default function AnalysisForm({
           ShiftId: formState.selectedShifts.join(","), // 👈 comma-separated
         });
         const response = await fetch(
-          ${BASE_URL}/api/productionappservices/getspcoperationlist?${params},
+          `${BASE_URL}/api/productionappservices/getspcoperationlist?${params}`,
           {
             method: "GET",
             // headers: { "Content-Type": "application/json" },
@@ -173,7 +173,7 @@ export default function AnalysisForm({
           ShiftId: formState.selectedShifts.join(","), // 👈 comma-separated
         });
         const response = await fetch(
-          ${BASE_URL}/api/productionappservices/getspcguagelist?${params},
+          `${BASE_URL}/api/productionappservices/getspcguagelist?${params}`,
           {
             method: "GET",
             // headers: { "Content-Type": "application/json" },
@@ -214,7 +214,7 @@ export default function AnalysisForm({
           ShiftId: formState.selectedShifts.join(","), // 👈 comma-separated
         });
         const response = await fetch(
-          ${BASE_URL}/api/productionappservices/getspcpirinspectiondatalist?${params},
+          `${BASE_URL}/api/productionappservices/getspcpirinspectiondatalist?${params}`,
           {
             method: "GET",
             // headers: { "Content-Type": "application/json" },
@@ -367,13 +367,13 @@ export default function AnalysisForm({
                       className="flex items-center space-x-1"
                     >
                       <Checkbox
-                        id={shift-${shift.ShiftId}}
+                        id={`shift-${shift.ShiftId}`}
                         checked={formState.selectedShifts.includes(shift.ShiftId)}
                         onCheckedChange={() => handleShiftToggle(shift.ShiftId)}
                         className="h-3 w-3"
                       />
                       <Label
-                        htmlFor={shift-${shift.ShiftId}}
+                        htmlFor={`shift-${shift.ShiftId}`}
                         className="text-xs"
                       >
                         {shift.ShiftName}
