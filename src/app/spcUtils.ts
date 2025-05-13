@@ -103,6 +103,8 @@ function calculateDistributionData(data: number[], lsl: number, usl: number): An
       mean: calculateMean(data) ?? 0,
       target: (usl + lsl) / 2,
       binEdges,
+      min: min,
+      max: max,
     },
   };
 }
@@ -247,7 +249,13 @@ export function calculateAnalysisData(
     },
     distribution: calculateDistributionData(measurements, lsl, usl) ?? {
       data: [],
-      stats: { mean: 0, target: (usl + lsl) / 2, binEdges: [] },
+      stats: { 
+        mean: 0, 
+        target: (usl + lsl) / 2, 
+        binEdges: [],
+        min: 0,
+        max: 0 
+      },
     },
     ssAnalysis: {
       processShift: cpk < 0.75 * cp ? "Yes" : "No",
