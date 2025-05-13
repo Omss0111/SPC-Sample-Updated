@@ -11,55 +11,22 @@ const controlChartConstants: {
   "5": { A2: 0.691, D3: 0, D4: 2.114, d2: 2.326 },
 };
 
-function calculateSubgroupXBar(measurements: number[], sampleSize: number): number[] {
-  const xBarValues: number[] = [];
-  
-  if (sampleSize === 1) {
-    // For individual values, each point is its own subgroup
-    return measurements;
-  }
-
-  // For sample sizes 2-5, group measurements and calculate averages
-  for (let i = 0; i < measurements.length; i += sampleSize) {
-    const subgroup = measurements.slice(i, Math.min(i + sampleSize, measurements.length));
-    if (subgroup.length > 0) {
-      // Calculate average based on actual number of points in subgroup
-      const subgroupAvg = subgroup.reduce((sum, val) => sum + val, 0) / subgroup.length;
-      xBarValues.push(subgroupAvg);
-    }
-  }
-
-  return xBarValues;
-}
-
-function calculateSubgroupRanges(measurements: number[], sampleSize: number): number[] {
-  const ranges: number[] = [];
-
-  if (sampleSize === 1) {
-    // For individual values, calculate moving ranges between consecutive points
-    for (let i = 1; i < measurements.length; i++) {
-      ranges.push(Math.abs(measurements[i] - measurements[i - 1]));
-    }
-    return ranges;
-  }
-
-  // For sample sizes 2-5, calculate range within each complete subgroup
-  for (let i = 0; i < measurements.length; i += sampleSize) {
-    const subgroup = measurements.slice(i, Math.min(i + sampleSize, measurements.length));
-    if (subgroup.length > 1) { // At least 2 points needed for range
-      const range = Math.max(...subgroup) - Math.min(...subgroup);
-      ranges.push(range);
-    }
-  }
-
-  return ranges;
-}
-
+/**
+ * Calculate the mean of an array of numbers
+ * @param data - Array of numeric values
+ * @returns Mean value or null if array is empty
+ */
 function calculateMean(data: number[]): number | null {
   if (data.length === 0) return null;
   return data.reduce((sum, value) => sum + value, 0) / data.length;
 }
 
+/**
+ * Calculate standard deviation of an array of numbers
+ * @param data - Array of numeric values
+ * @param mean - Mean value (optional)
+ * @returns Standard deviation or null if calculation fails
+ */
 function calculateStdDev(data: number[], mean: number | null = null): number | null {
   if (data.length === 0) return null;
   const dataMean = mean ?? calculateMean(data);
@@ -69,13 +36,81 @@ function calculateStdDev(data: number[], mean: number | null = null): number | n
   return variance !== null ? Math.sqrt(variance) : null;
 }
 
-function calculateDistributionData(data: number[], lsl: number, usl: number): AnalysisData["distribution"] | null {
+/**
+ * Calculate subgroup X-bar values based on sample size
+ * @param measurements - Original measurement values
+ * @param sampleSize - Sample size (1-5)
+ * @returns Array of X-bar values for each subgroup
+ */
+function calculateSubgroupXBar(measurements: number[], sampleSize: number): number[] {
+  const xBarValues: number[] = [];
+  
+  if (sampleSize === 1) {
+    // For sample size 1, each measurement is its own X-bar value
+    return [...measurements];
+  } else {
+    // For sample sizes 2-5, group measurements into subgroups
+    for (let i = 0; i < measurements.length; i += sampleSize) {
+      const subgroup = measurements.slice(i, Math.min(i + sampleSize, measurements.length));
+      // Include incomplete subgroups (as per paste-2.txt explanations)
+      if (subgroup.length > 0) {
+        const subgroupAvg = subgroup.reduce((sum, val) => sum + val, 0) / subgroup.length;
+        xBarValues.push(subgroupAvg);
+      }
+    }
+  }
+
+  return xBarValues;
+}
+
+/**
+ * Calculate subgroup ranges based on sample size
+ * @param measurements - Original measurement values
+ * @param sampleSize - Sample size (1-5)
+ * @returns Array of range values for each subgroup
+ */
+function calculateSubgroupRanges(measurements: number[], sampleSize: number): number[] {
+  const ranges: number[] = [];
+
+  if (sampleSize === 1) {
+    // For individual values, calculate moving ranges (MR) between consecutive points
+    for (let i = 1; i < measurements.length; i++) {
+      ranges.push(Math.abs(measurements[i] - measurements[i - 1]));
+    }
+  } else {
+    // For sample sizes 2-5, calculate range within each subgroup
+    for (let i = 0; i < measurements.length; i += sampleSize) {
+      const subgroup = measurements.slice(i, Math.min(i + sampleSize, measurements.length));
+      // Include incomplete subgroups as long as there are at least 2 values
+      if (subgroup.length >= 2) {
+        const range = Math.max(...subgroup) - Math.min(...subgroup);
+        ranges.push(range);
+      }
+    }
+  }
+
+  return ranges;
+}
+
+/**
+ * Calculate distribution data for histogram
+ * @param data - Array of numeric values
+ * @param lsl - Lower specification limit
+ * @param usl - Upper specification limit
+ * @returns Histogram data with stats or null if invalid
+ */
+function calculateDistributionData(
+  data: number[],
+  lsl: number,
+  usl: number
+): AnalysisData["distribution"] | null {
   if (data.length === 0) return null;
 
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min;
 
+  // Get an appropriate bin count based on data size
   const binCount = Math.ceil(Math.sqrt(data.length));
   const binWidth = range / binCount;
   const binStart = Math.min(min, lsl);
@@ -100,47 +135,139 @@ function calculateDistributionData(data: number[], lsl: number, usl: number): An
   return {
     data: histData,
     stats: {
+      min,
+      max,
       mean: calculateMean(data) ?? 0,
       target: (usl + lsl) / 2,
       binEdges,
-      min: min,
-      max: max,
     },
   };
 }
 
+/**
+ * Analyze samples for runs and trends
+ * @param data - Array of values to check
+ * @returns Analysis results or null if invalid
+ */
+function analyzeRuns(data: number[]): {
+  maxRunAbove: number;
+  maxRunBelow: number;
+  maxTrendUp: number;
+  maxTrendDown: number;
+} | null {
+  if (data.length === 0) return null;
+  
+  const mean = calculateMean(data);
+  if (mean === null) return null;
+
+  let currentRunAbove = 0;
+  let currentRunBelow = 0;
+  let maxRunAbove = 0;
+  let maxRunBelow = 0;
+  
+  // Check for runs above/below mean
+  data.forEach((value) => {
+    if (value > mean) {
+      currentRunAbove++;
+      currentRunBelow = 0;
+      maxRunAbove = Math.max(maxRunAbove, currentRunAbove);
+    } else if (value < mean) {
+      currentRunBelow++;
+      currentRunAbove = 0;
+      maxRunBelow = Math.max(maxRunBelow, currentRunBelow);
+    } else {
+      // Equal to mean - reset both counters
+      currentRunAbove = 0;
+      currentRunBelow = 0;
+    }
+  });
+
+  // Check for trends (increasing/decreasing)
+  let currentTrendUp = 1;
+  let currentTrendDown = 1;
+  let maxTrendUp = 1;
+  let maxTrendDown = 1;
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i] > data[i - 1]) {
+      currentTrendUp++;
+      currentTrendDown = 1;
+      maxTrendUp = Math.max(maxTrendUp, currentTrendUp);
+    } else if (data[i] < data[i - 1]) {
+      currentTrendDown++;
+      currentTrendUp = 1;
+      maxTrendDown = Math.max(maxTrendDown, currentTrendDown);
+    } else {
+      // Equal values - reset both counters
+      currentTrendUp = 1;
+      currentTrendDown = 1;
+    }
+  }
+
+  return {
+    maxRunAbove,
+    maxRunBelow,
+    maxTrendUp,
+    maxTrendDown
+  };
+}
+
+/**
+ * Calculate analysis data from inspection data
+ * @param inspectionData - Raw inspection data from API
+ * @param sampleSize - Sample size (1-5, defaults to 5)
+ * @returns Calculated analysis data or throws error if invalid
+ */
 export function calculateAnalysisData(
   inspectionData: InspectionData[],
   sampleSize: number = 5
 ): AnalysisData {
+  // Validate sampleSize
   const sampleSizeStr = sampleSize.toString();
-  if (!controlChartConstants[sampleSizeStr]) {
+  if (!controlChartConstants[sampleSizeStr] || sampleSize < 1 || sampleSize > 5) {
     throw new Error("Sample size must be between 1 and 5");
   }
 
-  // Extract and validate measurements
-  const measurements = inspectionData
-    .map(d => parseFloat(d.ActualSpecification))
-    .filter(m => !isNaN(m));
+  // Filter out invalid data and extract measurements
+  const validData = inspectionData.filter((d) => {
+    const actual = d.ActualSpecification;
+    const fromSpec = d.FromSpecification;
+    const toSpec = d.ToSpecification;
+    return (
+      actual != null &&
+      !isNaN(parseFloat(actual)) &&
+      fromSpec != null &&
+      !isNaN(parseFloat(fromSpec)) &&
+      toSpec != null &&
+      !isNaN(parseFloat(toSpec))
+    );
+  });
 
+  const measurements = validData.map((d) => parseFloat(d.ActualSpecification));
   if (measurements.length < sampleSize) {
     throw new Error("Insufficient valid data for analysis");
   }
 
   // Get specification limits
-  const lsl = parseFloat(inspectionData[0].FromSpecification);
-  const usl = parseFloat(inspectionData[0].ToSpecification);
+  const lsl = parseFloat(validData[0].FromSpecification);
+  const usl = parseFloat(validData[0].ToSpecification);
+
+  // Get constants
   const constants = controlChartConstants[sampleSizeStr];
 
-  // Calculate subgroup statistics with proper handling of incomplete subgroups
+  // Calculate basic statistics
+  const mean = calculateMean(measurements);
+  const stdDev = calculateStdDev(measurements, mean);
+  if (mean === null || stdDev === null) throw new Error("Failed to calculate statistics");
+
+  // Calculate subgroup statistics
   const xBarValues = calculateSubgroupXBar(measurements, sampleSize);
   const rangeValues = calculateSubgroupRanges(measurements, sampleSize);
 
-  // Calculate overall statistics
+  // Calculate control limits
   const grandMean = calculateMean(xBarValues) ?? 0;
   const avgRange = calculateMean(rangeValues) ?? 0;
 
-  // Calculate control limits
   const xBarUcl = grandMean + constants.A2 * avgRange;
   const xBarLcl = grandMean - constants.A2 * avgRange;
   const rangeUcl = constants.D4 * avgRange;
@@ -150,73 +277,72 @@ export function calculateAnalysisData(
   const xBarData = xBarValues.map((mean, i) => ({ x: i + 1, y: mean }));
   const rangeData = rangeValues.map((range, i) => ({ x: i + 1, y: range }));
 
-  // Calculate process capability indices
-  const stdDev = calculateStdDev(measurements) ?? 0;
-  const withinStdDev = avgRange / constants.d2;
+  // Calculate within subgroup standard deviation
+  const withinStdDev = sampleSize === 1 || constants.d2 === 0 ? stdDev : avgRange / constants.d2;
 
-  // Prevent division by zero for capability indices
+  // Prevent division by zero
   const safeWithinStdDev = withinStdDev === 0 ? 0.000001 : withinStdDev;
   const safeStdDev = stdDev === 0 ? 0.000001 : stdDev;
 
+  // Calculate process capability indices
   const cp = (usl - lsl) / (6 * safeWithinStdDev);
   const cpu = (usl - grandMean) / (3 * safeWithinStdDev);
   const cpl = (grandMean - lsl) / (3 * safeWithinStdDev);
   const cpk = Math.min(cpu, cpl);
 
+  // Calculate process performance indices
   const pp = (usl - lsl) / (6 * safeStdDev);
   const ppu = (usl - grandMean) / (3 * safeStdDev);
   const ppl = (grandMean - lsl) / (3 * safeStdDev);
   const ppk = Math.min(ppu, ppl);
 
+  // Calculate distribution data
+  const distribution = calculateDistributionData(measurements, lsl, usl) ?? {
+    data: [],
+    stats: { min: 0, max: 0, mean: 0, target: (usl + lsl) / 2, binEdges: [] },
+  };
+
   // Analyze for special causes
+  const runsAnalysis = analyzeRuns(xBarValues) ?? {
+    maxRunAbove: 0,
+    maxRunBelow: 0,
+    maxTrendUp: 0,
+    maxTrendDown: 0,
+  };
+
+  // Detect special causes
   const pointsOutsideXBarLimits = xBarData.filter(
-    point => point.y > xBarUcl || point.y < xBarLcl
+    (point) => point.y > xBarUcl || point.y < xBarLcl
   ).length;
-
   const pointsOutsideRangeLimits = rangeData.filter(
-    point => point.y > rangeUcl || point.y < rangeLcl
+    (point) => point.y > rangeUcl || point.y < rangeLcl
   ).length;
+  const hasEightConsecutive = runsAnalysis.maxRunAbove >= 8 || runsAnalysis.maxRunBelow >= 8;
+  const hasSixConsecutiveTrend = runsAnalysis.maxTrendUp >= 6 || runsAnalysis.maxTrendDown >= 6;
 
-  // Check for runs and trends
-  let consecutiveAboveMean = 0;
-  let consecutiveBelowMean = 0;
-  let maxConsecutiveAbove = 0;
-  let maxConsecutiveBelow = 0;
-  let consecutiveIncreasing = 0;
-  let consecutiveDecreasing = 0;
+  // 3S Analysis
+  const processShift = cpk < 0.75 * cp ? "Yes" : "No";
+  const processSpread = cp < 1 ? "Yes" : "No";
+  const specialCausePresent =
+    pp >= cp
+      ? "Special Cause Detection impossible"
+      : pp < 0.75 * cp
+      ? "Yes"
+      : "No";
 
-  for (let i = 0; i < xBarData.length; i++) {
-    // Check for runs above/below mean
-    if (xBarData[i].y > grandMean) {
-      consecutiveAboveMean++;
-      consecutiveBelowMean = 0;
-      maxConsecutiveAbove = Math.max(maxConsecutiveAbove, consecutiveAboveMean);
-    } else if (xBarData[i].y < grandMean) {
-      consecutiveBelowMean++;
-      consecutiveAboveMean = 0;
-      maxConsecutiveBelow = Math.max(maxConsecutiveBelow, consecutiveBelowMean);
-    } else {
-      consecutiveAboveMean = 0;
-      consecutiveBelowMean = 0;
-    }
-
-    // Check for trends
-    if (i > 0) {
-      if (xBarData[i].y > xBarData[i-1].y) {
-        consecutiveIncreasing++;
-        consecutiveDecreasing = 0;
-      } else if (xBarData[i].y < xBarData[i-1].y) {
-        consecutiveDecreasing++;
-        consecutiveIncreasing = 0;
-      } else {
-        consecutiveIncreasing = 0;
-        consecutiveDecreasing = 0;
-      }
-    }
+  // Decision Remark based on Cpk
+  let decisionRemark: string;
+  if (cpk >= 1.67) {
+    decisionRemark = "Process Excellent";
+  } else if (cpk >= 1.45) {
+    decisionRemark = "Process is more capable, Scope for Further Improvement";
+  } else if (cpk >= 1.33) {
+    decisionRemark = "Process is capable, Scope for Further Improvement";
+  } else if (cpk >= 1.0) {
+    decisionRemark = "Process is slightly capable, need 100% inspection";
+  } else {
+    decisionRemark = "Stop Process change, process design";
   }
-
-  const hasEightConsecutive = maxConsecutiveAbove >= 8 || maxConsecutiveBelow >= 8;
-  const hasSixConsecutiveTrend = consecutiveIncreasing >= 6 || consecutiveDecreasing >= 6;
 
   return {
     metrics: {
@@ -247,42 +373,31 @@ export function calculateAnalysisData(
         rangeMean: Number(avgRange.toFixed(4)),
         rangeLcl: Number(rangeLcl.toFixed(4)),
         Agostinho: Number(
-          (Math.abs(grandMean - calculateMean(measurements)!) / stdDev).toFixed(4)
-        ),
+          (Math.abs(grandMean - distribution.stats.mean) / stdDev).toFixed(4))
       },
     },
-    distribution: calculateDistributionData(measurements, lsl, usl) ?? {
-      data: [],
-      stats: { 
-        mean: 0, 
-        target: (usl + lsl) / 2, 
-        binEdges: [],
-        min: 0,
-        max: 0 
-      },
-    },
+    distribution,
     ssAnalysis: {
-      processShift: cpk < 0.75 * cp ? "Yes" : "No",
-      processSpread: cp < 1 ? "Yes" : "No",
-      specialCausePresent: pp >= cp ? "Special Cause Detection impossible" : pp < 0.75 * cp ? "Yes" : "No",
-      pointsOutsideLimits: pointsOutsideXBarLimits > 0 ? 
-        `${pointsOutsideXBarLimits} Points Detected` : 
-        "None",
-      rangePointsOutsideLimits: pointsOutsideRangeLimits > 0 ? 
-        `${pointsOutsideRangeLimits} Points Detected` : 
-        "None",
+      processShift,
+      processSpread,
+      specialCausePresent,
+      pointsOutsideLimits: pointsOutsideXBarLimits > 0
+        ? `${pointsOutsideXBarLimits} Points Detected`
+        : "None",
+      rangePointsOutsideLimits: pointsOutsideRangeLimits > 0
+        ? `${pointsOutsideRangeLimits} Points Detected`
+        : "None",
       eightConsecutivePoints: hasEightConsecutive ? "Yes" : "No",
       sixConsecutiveTrend: hasSixConsecutiveTrend ? "Yes" : "No",
     },
     processInterpretation: {
-      decisionRemark: cpk >= 1.67 ? "Process Excellent" :
-                      cpk >= 1.45 ? "Process is more capable, Scope for Further Improvement" :
-                      cpk >= 1.33 ? "Process is capable, Scope for Further Improvement" :
-                      cpk >= 1.0 ? "Process is slightly capable, need 100% inspection" :
-                      "Stop Process change, process design",
+      decisionRemark,
       processPotential: cp >= 1.33 ? "Excellent" : cp >= 1.0 ? "Good" : "Poor",
       processPerformance: cpk >= 1.33 ? "Excellent" : cpk >= 1.0 ? "Good" : "Poor",
-      processStability: pointsOutsideXBarLimits === 0 && !hasEightConsecutive ? "Stable" : "Unstable",
+      processStability:
+        pointsOutsideXBarLimits === 0 && !hasEightConsecutive
+          ? "Stable"
+          : "Unstable",
       processShift: hasEightConsecutive ? "Present" : "Not Detected",
     },
   };
