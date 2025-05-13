@@ -254,10 +254,10 @@ export function calculateAnalysisData(
       processSpread: cp < 1 ? "Yes" : "No",
       specialCausePresent: pp >= cp ? "Special Cause Detection impossible" : pp < 0.75 * cp ? "Yes" : "No",
       pointsOutsideLimits: pointsOutsideXBarLimits > 0 ? 
-        ${pointsOutsideXBarLimits} Points Detected : 
+        `${pointsOutsideXBarLimits} Points Detected` : 
         "None",
       rangePointsOutsideLimits: pointsOutsideRangeLimits > 0 ? 
-        ${pointsOutsideRangeLimits} Points Detected : 
+        `${pointsOutsideRangeLimits} Points Detected` : 
         "None",
       eightConsecutivePoints: hasEightConsecutive ? "Yes" : "No",
       sixConsecutiveTrend: hasSixConsecutiveTrend ? "Yes" : "No",
