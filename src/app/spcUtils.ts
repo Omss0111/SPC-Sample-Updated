@@ -253,8 +253,12 @@ export function calculateAnalysisData(
       processShift: cpk < 0.75 * cp ? "Yes" : "No",
       processSpread: cp < 1 ? "Yes" : "No",
       specialCausePresent: pp >= cp ? "Special Cause Detection impossible" : pp < 0.75 * cp ? "Yes" : "No",
-      pointsOutsideLimits: pointsOutsideXBarLimits > 0 ? ${pointsOutsideXBarLimits} Points Detected : "None",
-      rangePointsOutsideLimits: pointsOutsideRangeLimits > 0 ? ${pointsOutsideRangeLimits} Points Detected : "None",
+      pointsOutsideLimits: pointsOutsideXBarLimits > 0 ? 
+        ${pointsOutsideXBarLimits} Points Detected : 
+        "None",
+      rangePointsOutsideLimits: pointsOutsideRangeLimits > 0 ? 
+        ${pointsOutsideRangeLimits} Points Detected : 
+        "None",
       eightConsecutivePoints: hasEightConsecutive ? "Yes" : "No",
       sixConsecutiveTrend: hasSixConsecutiveTrend ? "Yes" : "No",
     },
